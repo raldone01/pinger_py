@@ -20,15 +20,16 @@ matplotlib.use('Qt5Agg')
 class Pinger(QtCore.QObject):
     newDataSignal = QtCore.Signal(list)
 
-    def __init__(self, server, interval=30, csv_file=None, recall=False):
+    def __init__(self, app_args=None):
         super().__init__()
-        self.server = server
+        self.server = app_args.server
         self.ip = gethostbyname(self.server) if self.server else None
-        self.interval = interval
-        self.csv_file = csv_file
+        self.interval = app_args.n
+        self.csv_file = app_args.csv
         self.ping_results = []
-        self.recall = recall
+        self.recall = self.csv_file is not None and app_args.recall
         self.running = True
+        self.app_args = app_args
 
         if self.recall:
             self.recall_results()
@@ -83,13 +84,14 @@ class Pinger(QtCore.QObject):
 
 
 class MyMplCanvas(FigureCanvas):
-    def __init__(self, parent=None, width=10, height=8, dpi=100):
+    def __init__(self, parent=None, width=10, height=8, dpi=100, app_args=None):
+        self.app_args = app_args
         self.fig = Figure(figsize=(width, height), dpi=dpi)
         self.axes = self.fig.add_subplot(111)
         self.axes.set_ylabel('Response Time (Milliseconds)')
         self.axes.set_xlabel('Time')
         self.axes.grid(True)
-        self.axes.set_title('Server Pinger')
+        self.axes.set_title(f"{app_args.server} {gethostbyname(app_args.server)} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         self.fig.tight_layout()
         self.hl, = self.axes.plot([], [], 'b')
         super().__init__(self.fig)
@@ -100,8 +102,6 @@ class MyMplCanvas(FigureCanvas):
 
         timestamps, ips, successes, response_times = zip(*ping_results)
         timestamps = [datetime.fromtimestamp(t) for t in timestamps]  # Convert datetime to Matplotlib's internal representation
-
-        self.axes.set_title(f"{ips[0]} - {timestamps[0]}")
 
         def format_func(x, pos):
             dt = num2date(x)
@@ -115,11 +115,10 @@ class MyMplCanvas(FigureCanvas):
 
         # mark failed pings with red zones
         # pings are not equally spaced compute the span to the next ping
-        global app_args
         for i in range(len(successes)):
             if successes[i] == 0:
                 start = timestamps[i]
-                end = timestamps[i+1] if i < len(successes) - 1 else timestamps[i] + timedelta(seconds=app_args.n)
+                end = timestamps[i+1] if i < len(successes) - 1 else timestamps[i] + timedelta(seconds=self.app_args.n)
                 self.axes.axvspan(start, end, alpha=0.2, color='red')
 
         self.hl.set_data(date2num(timestamps), response_times)
@@ -127,8 +126,6 @@ class MyMplCanvas(FigureCanvas):
         self.axes.autoscale_view()
 
         self.draw()
-
-app_args = None
 
 def main():
     parser = argparse.ArgumentParser(description='Ping a server periodically and plot the response time.')
@@ -138,13 +135,11 @@ def main():
     parser.add_argument('--csv', type=str, help='The CSV file to write results to.')
     parser.add_argument('--headless', action='store_true', help='Run without a GUI.')
     args = parser.parse_args()
-    global app_args
-    app_args = args
 
     app = QApplication([])
     app.setApplicationDisplayName("Server Pinger")
 
-    pinger = Pinger(args.server, args.n, args.csv, args.recall)
+    pinger = Pinger(args)
     pinger_thread = QtCore.QThread()
     pinger.moveToThread(pinger_thread)
 
@@ -153,7 +148,7 @@ def main():
     timer.timeout.connect(lambda: None)  # Let the interpreter run each 500 ms.
 
     if not args.headless:
-        sc = MyMplCanvas()
+        sc = MyMplCanvas(app_args=args)
         pinger.newDataSignal.connect(sc.update_figure)
         sc.show()
     else:
