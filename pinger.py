@@ -3,18 +3,17 @@ import csv
 import time
 from ping3 import ping, verbose_ping
 from matplotlib import pyplot as plt
-import threading
+from socket import gethostbyname
 
 class Pinger:
     def __init__(self, server, interval=30, csv_file=None, headless=False, recall=False):
         self.server = server
+        self.ip = gethostbyname(self.server) if self.server else None
         self.interval = interval
         self.csv_file = csv_file
         self.headless = headless
         self.recall = recall
         self.ping_results = []
-        self.running = False
-        self.plot_thread = None
 
         if not self.headless:
             plt.ion()
@@ -23,10 +22,6 @@ class Pinger:
         if self.recall:
             self.recall_results()
             return
-        self.running = True
-        if not self.headless:
-            self.plot_thread = threading.Thread(target=self.update_plot)
-            self.plot_thread.start()
         self.ping_loop()
 
     def recall_results(self):
@@ -39,7 +34,7 @@ class Pinger:
         plt.show()
 
     def ping_loop(self):
-        while self.running:
+        while True:
             timestamp = int(time.time())
             try:
                 response_time = ping(self.server)
@@ -49,9 +44,9 @@ class Pinger:
                 success = 0
 
             response_time_ms = None if response_time is None else round(response_time * 1000)
-            result = (timestamp, success, response_time_ms)
+            result = (timestamp, self.ip, success, response_time_ms)
 
-            print(f"{timestamp};{success};{response_time_ms}")
+            print(f"{timestamp};{self.ip};{success};{response_time_ms}")
             self.ping_results.append(result)
 
             if self.csv_file:
@@ -61,19 +56,20 @@ class Pinger:
 
             time.sleep(self.interval)
 
+            if not self.headless:
+                self.update_plot()
+
     def update_plot(self):
         plt.clf()
         plt.ylabel('Response Time (ms)')
         plt.xlabel('Time')
-        timestamps, _, response_times = zip(*self.ping_results)
+        timestamps, _, successes, response_times = zip(*self.ping_results)
+        for t, s in zip(timestamps, successes):
+            if s == 0:
+                plt.axvline(x=t, color='r', linewidth=2)
         plt.plot(timestamps, response_times)
         plt.draw()
         plt.pause(1)
-
-    def stop(self):
-        self.running = False
-        if self.plot_thread:
-            self.plot_thread.join()
 
 def main():
     parser = argparse.ArgumentParser(description='Ping a server periodically.')
@@ -89,7 +85,7 @@ def main():
     try:
         pinger.start()
     except KeyboardInterrupt:
-        pinger.stop()
+        pass
 
 if __name__ == "__main__":
     main()
