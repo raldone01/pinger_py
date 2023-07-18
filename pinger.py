@@ -13,6 +13,7 @@ from matplotlib.dates import DateFormatter, date2num, num2date
 from matplotlib.ticker import MaxNLocator, FuncFormatter
 import matplotlib
 import signal
+import os
 
 matplotlib.use('Qt5Agg')
 
@@ -71,13 +72,41 @@ class Pinger(QtCore.QObject):
 
 
     def recall_results(self):
-        with open(self.csv_file, 'r', newline='') as f:
-            reader = csv.reader(f, delimiter=';')
-            for row in reader:
-                timestamp = float(row[0])
-                result = (timestamp, row[1], int(row[2]), int(row[3]))
-                self.ping_results.append(result)
-                print(f"{datetime.fromtimestamp(timestamp)};{row[1]};{row[2]};{row[3]}")
+        # ignore corrupt csv lines
+        # ping result format: <timestamp: ms>;<ip: string>;<success: 0 or 1>;<response_time: ms or '' when success 0>
+        try:
+            with open(self.csv_file, 'r', newline='') as f:
+                reader = csv.reader(f, delimiter=';')
+                for row in reader:
+                    try:
+                        # Check if row has correct number of values
+                        if len(row) != 4:
+                            print(f"Skipping row due to incorrect number of values: {row}")
+                            continue
+
+                        # Validate timestamp
+                        timestamp = float(row[0])
+
+                        # Validate success flag
+                        success = int(row[2])
+                        if success not in [0, 1]:
+                            print(f"Skipping row due to invalid success value: {row}")
+                            continue
+
+                        # Validate and handle response time
+                        response_time = 0 if row[3] == '' else int(row[3])
+
+                        result = (timestamp, row[1], success, response_time)
+                        self.ping_results.append(result)
+                        print(f"{datetime.fromtimestamp(timestamp)};{row[1]};{row[2]};{response_time}")
+
+                    except ValueError:
+                        print(f"Skipping row due to value error: {row}")
+                        continue
+
+        except IOError:
+            print(f"Could not read file: {self.csv_file}")
+
 
     def stop(self):
         self.running = False
@@ -91,7 +120,10 @@ class MyMplCanvas(FigureCanvas):
         self.axes.set_ylabel('Response Time (Milliseconds)')
         self.axes.set_xlabel('Time')
         self.axes.grid(True)
-        self.axes.set_title(f"{app_args.server} {gethostbyname(app_args.server)} - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        title = f"{app_args.server}"
+        title += f"{gethostbyname(app_args.server)}" if app_args.server else ""
+        title += f" - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        self.axes.set_title(title)
         self.fig.tight_layout()
         self.hl, = self.axes.plot([], [], 'b')
         super().__init__(self.fig)
