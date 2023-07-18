@@ -5,8 +5,8 @@ from ping3 import ping
 from matplotlib import pyplot as plt
 from socket import gethostbyname
 from datetime import datetime
-from matplotlib.dates import DateFormatter, HourLocator, date2num
-from matplotlib.ticker import MaxNLocator
+from matplotlib.dates import DateFormatter, date2num, num2date
+from matplotlib.ticker import MaxNLocator, FuncFormatter
 
 class Pinger:
     def __init__(self, server, interval=30, csv_file=None, headless=False, recall=False):
@@ -75,8 +75,17 @@ class Pinger:
                 plt.axvline(x=t, color='r', linewidth=2)
         plt.plot(timestamps, response_times)
         plt.gcf().autofmt_xdate()  # for formatting the x-axis nicely
+
+        def format_func(x, pos):
+            dt = num2date(x)
+            if (max(timestamps) - min(timestamps)).seconds <= 60:
+                return dt.strftime('%H:%M:%S')
+            else:
+                return dt.strftime('%H:%M')
+
         plt.gca().xaxis.set_major_locator(MaxNLocator(10))
-        plt.gca().xaxis.set_major_formatter(DateFormatter('%H:%M'))
+        plt.gca().xaxis.set_major_formatter(FuncFormatter(format_func))
+
         plt.draw()
         plt.pause(1)
 
