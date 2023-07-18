@@ -1,2 +1,4 @@
-matplotlib
-ping3
+matplotlib==3.7.2
+numpy==1.25.1
+ping3==4.0.4
+PySide6==6.5.1.1
